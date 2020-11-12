@@ -56,7 +56,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     end
 
     # Handle file
-    if cache_ttl = options.exist?('cache_')
+    if cache_ttl = options.exist?('cache_file')
       cache_file = options['cache_file']
     else
       cache_file = ""
