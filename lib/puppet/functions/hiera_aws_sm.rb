@@ -48,6 +48,21 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
       end
     end
 
+    # Handle cache
+    if options.exist?('cache_ttl')
+      cache_ttl = options['cache_ttl']
+    else
+      cache_ttl = 24
+    end
+
+    # Handle file
+    if options.exist?('cache_')
+      cache_file = options['cache_file']
+    else
+      cache_file = ""
+    end
+
+
     # Handle prefixes if suplied
     if prefixes = options['prefixes']
       raise ArgumentError, '[hiera-aws-sm] prefixes must be an array' unless prefixes.is_a?(Array)
@@ -120,8 +135,12 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     context.explain { "[hiera-aws-sm] Looking up #{key}" }
     begin
       secret_formatted = key.gsub('::', '/')
-      response = secretsmanager.get_secret_value(secret_id: secret_formatted)
-      log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
+      if (options['cache_ttl'] > 0 and secret_in_cache == true) || (options['cache_ttl'] == 0)
+        response = secretsmanager.get_secret_value(secret_id: secret_formatted)
+        log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
+      else
+        raise Aws::SecretsManager::Errors::UnrecognizedClientException
+      end
     rescue Aws::SecretsManager::Errors::ResourceNotFoundException
       context.explain { "[hiera-aws-sm] No data found for #{key}" }
       if key.include? "common"
@@ -165,6 +184,66 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
       key
     end
   end
+
+#Process create cachefile
+  def file_cache_exist(file, key)
+    file = "/datos/cachedata"
+    two_hours_ago = DateTime.now - (2/24.0)
+    client = Aws::SecretsManager::Client.new(
+      region: 'eu-west-1',
+    )
+    resp = client.list_secrets({
+      max_results: 100,
+    })
+  
+    if(File.exist?("#{file}"))
+      if (two_hours_ago.strftime( "%Y-%m-%d %H:%M:%S" ) > File.ctime("#{file}").strftime( "%Y-%m-%d %H:%M:%S" ))
+        arxiu = File.open("#{file}", 'w')
+        begin
+          for i in resp.secret_list
+            if i.name.include? "hiera-secrets"
+              arxiu.write(i.name, "\n")
+            end
+          end
+          resp = client.list_secrets({
+            max_results: 100,
+            next_token: resp.next_token
+          })
+        end while resp.key?("next_token")
+      end
+    else
+      arxiu = File.open(file, 'w')
+      begin
+        for i in resp.secret_list
+          if i.name.include? "hiera-secrets"
+            arxiu.write(i.name, "\n")
+          end
+        end
+        resp = client.list_secrets({
+          max_results: 100,
+          next_token: resp.next_token
+        })
+      end while resp.key?("next_token")
+      puts "Create a new file cache with name #{file}"
+    end
+    secret_in_cache(file, key)
+  end
+
+#Function search key on cachefile
+  def secret_in_cache(key)
+    file = "/datos/cachedata"
+    secrets = File.readlines(file).map(&:chomp)
+    value = args
+    secrets.each do |e|
+      if(value.include?(e))
+        log.warn("[hiera-aws-sm] secret #{e} found in cachefile")
+        return true
+      end
+    end
+    return false
+  end
+
+
 
   ##
   # Process the response secret string by attempting to coerce it
