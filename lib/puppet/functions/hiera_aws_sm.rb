@@ -49,14 +49,14 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     end
 
     # Handle cache
-    if options.exist?('cache_ttl')
+    if cache_ttl = options.exist?('cache_ttl')
       cache_ttl = options['cache_ttl']
     else
       cache_ttl = 24
     end
 
     # Handle file
-    if options.exist?('cache_')
+    if cache_ttl = options.exist?('cache_')
       cache_file = options['cache_file']
     else
       cache_file = ""
