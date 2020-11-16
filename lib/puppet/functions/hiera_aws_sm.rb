@@ -70,6 +70,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
 
     if options.key?('cache_file')
       cache_file = options['cache_file']
+      log.info("Using cache #{cache_file}")
     else
       cache_file = "" 
     end
