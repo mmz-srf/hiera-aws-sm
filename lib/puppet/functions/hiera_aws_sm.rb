@@ -230,12 +230,12 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     resp = client.list_secrets({
       max_results: 100,
     })
-        arxiu = File.open(path, 'w')
+        file = File.open(path, 'w')
         begin
           for i in resp.secret_list
             for prefix in prefixes
               if i.name.include? prefix 
-                arxiu.puts(i.name)
+                file.puts(i.name)
               end
    	    end 
           end
@@ -247,7 +247,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
             next_token: resp.next_token
           })
         end while true
-	arxiu.close()
+        file.close()
       return true
   end
 
