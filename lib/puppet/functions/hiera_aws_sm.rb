@@ -1,4 +1,6 @@
 require 'logger'
+require 'date'
+require 'digest/md5'
 
 Puppet::Functions.create_function(:hiera_aws_sm) do
   begin
@@ -32,6 +34,17 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
   # @param options Options hash
   # @param context Puppet::LookupContext
   def lookup_key(key, options, context)
+    log = Logger.new(STDOUT)
+    case options['log_level']
+    when 'info'
+      log.level = Logger::INFO
+    when 'warn'
+      log.level = Logger::WARN    
+    when 'debug'
+      log.level = Logger::DEBUG
+    else
+      log.level = Logger::ERROR
+    end
     # Filter out keys that do not match a regex in `confine_to_keys`, if it's specified
     if confine_keys = options['confine_to_keys']
       raise ArgumentError, '[hiera-aws-sm] confine_to_keys must be an array' unless confine_keys.is_a?(Array)
@@ -46,6 +59,22 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
         context.explain { "[hiera-aws-sm] Skipping secrets manager as #{key} doesn't match confine_to_keys" }
         context.not_found
       end
+    end
+
+    # Handle cache
+    if options.key?('cache_ttl')
+      cache_ttl = options['cache_ttl']
+    else
+      options['cache_ttl'] = 0
+    end
+
+    if options.key?('cache_file')
+      log.info("Using cache #{options['cache_file']}")
+    else
+      create_md5 = options['prefixes'].join
+      file_name = Digest::MD5.hexdigest(create_md5)
+      options['cache_file'] = "/tmp/#{file_name}"
+      log.info("Using cache #{options['cache_file']}")
     end
 
     # Handle prefixes if suplied
@@ -113,15 +142,17 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
       log.level = Logger::ERROR
     end
     secretsmanager = Aws::SecretsManager::Client.new(client_opts)
-
     response = nil
     secret = nil
 
     context.explain { "[hiera-aws-sm] Looking up #{key}" }
     begin
       secret_formatted = key.gsub('::', '/')
-      response = secretsmanager.get_secret_value(secret_id: secret_formatted)
-      log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
+      if (secret_in_cache(secret_formatted, options)) || (options['cache_ttl'] == 0)
+        log.info("[hiera-aws-sm] secret #{key}  found in cache ")
+        response = secretsmanager.get_secret_value(secret_id: secret_formatted)
+        log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
+      end
     rescue Aws::SecretsManager::Errors::ResourceNotFoundException
       context.explain { "[hiera-aws-sm] No data found for #{key}" }
       if key.include? "common"
@@ -165,6 +196,64 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
       key
     end
   end
+
+  def secret_in_cache(key, options)
+    if options['cache_ttl'] > 0
+      file_cache_exist(options)
+      secrets = File.readlines(options['cache_file']).map(&:chomp)
+      value = key
+      secrets.each do | secret|
+        if(value == secret)
+          return true
+        end
+      end
+      return false
+    else 
+      return false
+    end
+  end
+
+  def file_cache_exist(options)
+    cache_expiration_time = DateTime.now - (options['cache_ttl']/24.0)
+
+    if(File.exist?("#{options['cache_file']}"))
+      if (cache_expiration_time.strftime( "%Y-%m-%d %H:%M:%S" ) > File.ctime("#{options['cache_file']}").strftime( "%Y-%m-%d %H:%M:%S" ))
+         generate_cache(options['cache_file'], options['prefixes'], options['region'])
+      end
+    else
+         generate_cache(options['cache_file'], options['prefixes'], options['region'])
+    end
+  end
+
+  def generate_cache(path, prefixes, region)
+    client = Aws::SecretsManager::Client.new(
+      region: region,
+    )
+    resp = client.list_secrets({
+      max_results: 100,
+    })
+    file = File.open(path, 'w')
+    begin
+      for i in resp.secret_list
+        for prefix in prefixes
+          if i.name.include? prefix 
+            file.puts(i.name)
+          end
+        end
+      end
+      if not resp.key?('next_token')
+        break
+      end
+      resp = client.list_secrets({
+        max_results: 100,
+        next_token: resp.next_token
+      })
+    end while true
+    file.close()
+    return true
+  end
+
+
 
   ##
   # Process the response secret string by attempting to coerce it
