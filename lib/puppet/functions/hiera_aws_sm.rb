@@ -212,10 +212,10 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
   end
 
   def file_cache_exist(options)
-    two_hours_ago = DateTime.now - (options['cache_ttl']/24.0)
+    cache_expiration_time = DateTime.now - (options['cache_ttl']/24.0)
 
     if(File.exist?("#{options['cache_file']}"))
-      if (two_hours_ago.strftime( "%Y-%m-%d %H:%M:%S" ) > File.ctime("#{options['cache_file']}").strftime( "%Y-%m-%d %H:%M:%S" ))
+      if (cache_expiration_time.strftime( "%Y-%m-%d %H:%M:%S" ) > File.ctime("#{options['cache_file']}").strftime( "%Y-%m-%d %H:%M:%S" ))
          generate_cache(options['cache_file'], options['prefixes'])
       end
     else
@@ -223,9 +223,9 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     end
   end
 
-  def generate_cache(path, prefixes)
+  def generate_cache(path, prefixes, options)
     client = Aws::SecretsManager::Client.new(
-      region: 'eu-west-1',
+      region: options['region'],
     )
     resp = client.list_secrets({
       max_results: 100,
