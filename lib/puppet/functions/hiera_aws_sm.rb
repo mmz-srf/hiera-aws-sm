@@ -72,7 +72,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
       log.info("Using cache #{options['cache_file']}")
     else
       create_md5 = options['prefixes'].join
-      file_name = Digest::md5.hexdigest(create_md5)
+      file_name = Digest::MD5.hexdigest(create_md5)
       options['cache_file'] = "/tmp/#{file_name}"
       log.info("Using cache #{options['cache_file']}")
     end
