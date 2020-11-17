@@ -65,7 +65,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     if options.key?('cache_ttl')
       cache_ttl = options['cache_ttl']
     else
-      cache_ttl = 24
+      options['cache_ttl'] = 0
     end
 
     if options.key?('cache_file')
