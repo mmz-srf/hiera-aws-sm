@@ -1,6 +1,6 @@
 require 'logger'
 require 'date'
-
+require 'digest/md5'
 
 Puppet::Functions.create_function(:hiera_aws_sm) do
   begin
@@ -69,10 +69,12 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     end
 
     if options.key?('cache_file')
-      cache_file = options['cache_file']
-      log.info("Using cache #{cache_file}")
+      log.info("Using cache #{options['cache_file']}")
     else
-      cache_file = "" 
+      create_md5 = options['prefixes'].join
+      file_name = Digest::md5.hexdigest(create_md5)
+      options['cache_file'] = "/tmp/#{file_name}"
+      log.info("Using cache #{options['cache_file']}")
     end
 
     # Handle prefixes if suplied
