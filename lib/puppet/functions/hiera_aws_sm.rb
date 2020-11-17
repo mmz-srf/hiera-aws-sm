@@ -230,25 +230,25 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     resp = client.list_secrets({
       max_results: 100,
     })
-        file = File.open(path, 'w')
-        begin
-          for i in resp.secret_list
-            for prefix in prefixes
-              if i.name.include? prefix 
-                file.puts(i.name)
-              end
-   	    end 
+    file = File.open(path, 'w')
+    begin
+      for i in resp.secret_list
+        for prefix in prefixes
+          if i.name.include? prefix 
+            file.puts(i.name)
           end
-          if not resp.key?('next_token')
-            break
-          end
-          resp = client.list_secrets({
-            max_results: 100,
-            next_token: resp.next_token
-          })
-        end while true
-        file.close()
-      return true
+        end
+      end
+      if not resp.key?('next_token')
+        break
+      end
+      resp = client.list_secrets({
+        max_results: 100,
+        next_token: resp.next_token
+      })
+    end while true
+    file.close()
+    return true
   end
 
 
