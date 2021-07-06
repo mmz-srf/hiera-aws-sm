@@ -8,16 +8,6 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
   rescue LoadError
     raise Puppet::DataBinding::LookupError, '[hiera-aws-sm] Must install json gem to use hiera-aws-sm backend'
   end
-  begin
-    require 'aws-sdk-core'
-  rescue LoadError
-    raise Puppet::DataBinding::LookupError, '[hiera-aws-sm] Must install aws-sdk-core gem to use hiera-aws-sm backend'
-  end
-  begin
-    require 'aws-sdk-secretsmanager'
-  rescue LoadError
-    raise Puppet::DataBinding::LookupError, '[hiera-aws-sm] Must install aws-sdk-secretsmanager gem to use hiera-aws-sm backend'
-  end
 
   dispatch :lookup_key do
     param 'Variant[String, Numeric]', :key
@@ -125,11 +115,6 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
   # it is returned directly. If secret_string is set, and can be co-erced
   # into a Hash, it is returned, otherwise a String is returned.
   def get_secret(key, options, context)
-    client_opts = {}
-    client_opts[:access_key_id] = options['aws_access_key'] if options.key?('aws_access_key')
-    client_opts[:secret_access_key] = options['aws_secret_key'] if options.key?('aws_secret_key')
-    client_opts[:region] = options['region'] if options.key?('region')
-    
     log = Logger.new(STDOUT)
     case options['log_level']
     when 'info'
@@ -141,46 +126,30 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     else
       log.level = Logger::ERROR
     end
-    secretsmanager = Aws::SecretsManager::Client.new(client_opts)
     response = nil
     secret = nil
+    credentials_file = options['credentials_file']
 
     context.explain { "[hiera-aws-sm] Looking up #{key}" }
-    begin
-      secret_formatted = key.gsub('::', '/')
-      # development/puppetserver/profile_puppetserver/puppetdb/aws_testpassword
-      # production/puppetserver.loc.serv.development.srf.mpc/profile_puppetserver/puppetdb/aws_testpassword
-      if (secret_in_cache(secret_formatted, options)) || (options['cache_ttl'] == 0)
-        log.info("[hiera-aws-sm] secret #{key}  found in cache ")
-        #response = secretsmanager.get_secret_value(secret_id: secret_formatted)
-        #output = `export AWS_ACCESS_KEY_ID=XXXXXX && export AWS_SECRET_ACCESS_KEY=YYYYYY && export AWS_DEFAULT_REGION=eu-central-1 && aws secretsmanager get-secret-value --secret-id StefansTestSecretName`
-        #response = JSON.parse(output)
-        response = JSON.parse('{
-                        "SecretString": "{\"StefansTestSecret\":\"xxxxx\",\"vvvvvvv\":\"Oh, man kann was hinzufügen\"}"
-                    }')
-        log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
-      end
-    rescue Aws::SecretsManager::Errors::ResourceNotFoundException
-      context.explain { "[hiera-aws-sm] No data found for #{key}" }
-      if key.include? "common"
-        log.warn("[hiera-aws-sm] secret #{key} not found in SM")
-      else
-        log.info("[hiera-aws-sm] secret #{key} not found in SM")
-      end
-    rescue Aws::SecretsManager::Errors::UnrecognizedClientException
-      raise Puppet::DataBinding::LookupError, "[hiera-aws-sm] Skipping backend. No permission to access #{key}"
-    rescue Aws::SecretsManager::Errors::ServiceError => e
-      if e.message == 'You can\'t perform this operation on the secret because it was marked for deletion.' then
-        context.explain { "[hiera-aws-sm] #{key} found but scheduled for deletion" }
-        log.info("[hiera-aws-sm] #{key} found but scheduled for deletion")
-      else
-        raise Puppet::DataBinding::LookupError, "[hiera-aws-sm] Skipping backend. Failed to lookup #{key} due to #{e.message}"
-      end
+    secret_formatted = key.gsub('::', '/')
+    # development/puppetserver/profile_puppetserver/puppetdb/aws_testpassword
+    # production/puppetserver.loc.serv.development.srf.mpc/profile_puppetserver/puppetdb/aws_testpassword
+    if (secret_in_cache(secret_formatted, options)) || (options['cache_ttl'] == 0)
+      log.info("[hiera-aws-sm] secret #{key}  found in cache ")
+
+      output = `export AWS_CONFIG_FILE=#{credentials_file} && aws secretsmanager get-secret-value --secret-id development/puppetserver/profile_puppetserver/puppetdb/aws_testpassword 2>&1`
+      #output = `printenv`
+      response = JSON.parse(output)
+      #response = JSON.parse('{
+      #                "SecretString": "{\"StefansTestSecret\":\"xxxxx\",\"vvvvvvv\":\"Oh, man kann was hinzufügen\"}"
+      #            }')
+      log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
     end
 
     unless response.nil?
+      # TODO write result to "secret" variable
       secret = process_secret_string(response['SecretString'], options, context)
-      secret = secret_formatted
+      #secret = output
     end
 
     secret
