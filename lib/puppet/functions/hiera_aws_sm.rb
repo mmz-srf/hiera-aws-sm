@@ -148,9 +148,16 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     context.explain { "[hiera-aws-sm] Looking up #{key}" }
     begin
       secret_formatted = key.gsub('::', '/')
+      # development/puppetserver/profile_puppetserver/puppetdb/aws_testpassword
+      # production/puppetserver.loc.serv.development.srf.mpc/profile_puppetserver/puppetdb/aws_testpassword
       if (secret_in_cache(secret_formatted, options)) || (options['cache_ttl'] == 0)
         log.info("[hiera-aws-sm] secret #{key}  found in cache ")
-        response = secretsmanager.get_secret_value(secret_id: secret_formatted)
+        #response = secretsmanager.get_secret_value(secret_id: secret_formatted)
+        #output = `export AWS_ACCESS_KEY_ID=XXXXXX && export AWS_SECRET_ACCESS_KEY=YYYYYY && export AWS_DEFAULT_REGION=eu-central-1 && aws secretsmanager get-secret-value --secret-id StefansTestSecretName`
+        #response = JSON.parse(output)
+        response = JSON.parse('{
+                        "SecretString": "{\"StefansTestSecret\":\"xxxxx\",\"vvvvvvv\":\"Oh, man kann was hinzufügen\"}"
+                    }')
         log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
       end
     rescue Aws::SecretsManager::Errors::ResourceNotFoundException
@@ -172,15 +179,8 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     end
 
     unless response.nil?
-      # rubocop:disable Style/NegatedIf
-      if !response.secret_binary.nil?
-        context.explain { "[hiera-aws-sm] #{key} is a binary" }
-        secret = response.secret_binary
-      else
-        # Do our processing in here
-        secret = process_secret_string(response.secret_string, options, context)
-      end
-      # rubocop:enable Style/NegatedIf
+      secret = process_secret_string(response['SecretString'], options, context)
+      secret = secret_formatted
     end
 
     secret
