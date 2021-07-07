@@ -131,13 +131,13 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     credentials_file = options['credentials_file']
 
     context.explain { "[hiera-aws-sm] Looking up #{key}" }
-    secret_formatted = key.gsub('::', '/')
+    secret_formatted = key.gsub('::', options['delimiter'])
     # development/puppetserver/profile_puppetserver/puppetdb/aws_testpassword
     # production/puppetserver.loc.serv.development.srf.mpc/profile_puppetserver/puppetdb/aws_testpassword
     if (secret_in_cache(secret_formatted, options)) || (options['cache_ttl'] == 0)
       log.info("[hiera-aws-sm] secret #{key}  found in cache ")
 
-      output = `export AWS_CONFIG_FILE=#{credentials_file} && aws secretsmanager get-secret-value --secret-id development/puppetserver/profile_puppetserver/puppetdb/aws_testpassword 2>&1`
+      output = `export AWS_CONFIG_FILE=#{credentials_file} && aws secretsmanager get-secret-value --secret-id #{secret_formatted} 2>&1`
       #output = `printenv`
       response = JSON.parse(output)
       #response = JSON.parse('{
@@ -150,6 +150,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
       # TODO write result to "secret" variable
       secret = process_secret_string(response['SecretString'], options, context)
       #secret = output
+      #secret = secret_formatted
     end
 
     secret
