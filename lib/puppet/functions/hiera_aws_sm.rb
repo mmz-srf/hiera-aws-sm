@@ -51,23 +51,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
       end
     end
 
-    # Handle cache
-    if options.key?('cache_ttl')
-      cache_ttl = options['cache_ttl']
-    else
-      options['cache_ttl'] = 0
-    end
-
-    if options.key?('cache_file')
-      log.info("Using cache #{options['cache_file']}")
-    else
-      create_md5 = options['prefixes'].join
-      file_name = Digest::MD5.hexdigest(create_md5)
-      options['cache_file'] = "/tmp/#{file_name}"
-      log.info("Using cache #{options['cache_file']}")
-    end
-
-    # Handle prefixes if suplied
+    # Handle prefixes if suplied
     if prefixes = options['prefixes']
       raise ArgumentError, '[hiera-aws-sm] prefixes must be an array' unless prefixes.is_a?(Array)
       if delimiter = options['delimiter']
@@ -131,20 +115,14 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     credentials_file = options['credentials_file']
 
     context.explain { "[hiera-aws-sm] Looking up #{key}" }
-    secret_formatted = key.gsub('::', options['delimiter'])
-    # development/puppetserver/profile_puppetserver/puppetdb/aws_testpassword
-    # production/puppetserver.loc.serv.development.srf.mpc/profile_puppetserver/puppetdb/aws_testpassword
-    if (secret_in_cache(secret_formatted, options)) || (options['cache_ttl'] == 0)
-      log.info("[hiera-aws-sm] secret #{key}  found in cache ")
 
-      output = `export AWS_CONFIG_FILE=#{credentials_file} && aws secretsmanager get-secret-value --secret-id #{secret_formatted} 2>&1`
-      #output = `printenv`
-      response = JSON.parse(output)
-      #response = JSON.parse('{
-      #                "SecretString": "{\"StefansTestSecret\":\"xxxxx\",\"vvvvvvv\":\"Oh, man kann was hinzufügen\"}"
-      #            }')
-      log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
-    end
+    secret_f = key.gsub('::', options['delimiter'])
+    secret_formatted = secret_f.sub('secretmanager.', '') #remove secrets prefix for cleaner secret names
+    log.info("[hiera-aws-sm] secret #{key}  found in cache ")
+
+    output = `export AWS_CONFIG_FILE=#{credentials_file} && aws secretsmanager get-secret-value --secret-id #{secret_formatted} 2>&1`
+    response = JSON.parse(output)
+    log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
 
     unless response.nil?
       # TODO write result to "secret" variable
@@ -153,80 +131,12 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
       #secret = secret_formatted
     end
 
+    #secret = secret_formatted
     secret
   end
 
   ##
-  # Get the secret name to lookup, applying a prefix if
-  # one is set in the options
-  def secret_key_name(key, options)
-    if options.key?('prefix')
-      [options.prefix, key].join('/')
-    else
-      key
-    end
-  end
-
-  def secret_in_cache(key, options)
-    if options['cache_ttl'] > 0
-      file_cache_exist(options)
-      secrets = File.readlines(options['cache_file']).map(&:chomp)
-      value = key
-      secrets.each do | secret|
-        if(value == secret)
-          return true
-        end
-      end
-      return false
-    else 
-      return false
-    end
-  end
-
-  def file_cache_exist(options)
-    cache_expiration_time = DateTime.now - (options['cache_ttl']/24.0)
-
-    if(File.exist?("#{options['cache_file']}"))
-      if (cache_expiration_time.strftime( "%Y-%m-%d %H:%M:%S" ) > File.ctime("#{options['cache_file']}").strftime( "%Y-%m-%d %H:%M:%S" ))
-         generate_cache(options['cache_file'], options['prefixes'], options['region'])
-      end
-    else
-         generate_cache(options['cache_file'], options['prefixes'], options['region'])
-    end
-  end
-
-  def generate_cache(path, prefixes, region)
-    client = Aws::SecretsManager::Client.new(
-      region: region,
-    )
-    resp = client.list_secrets({
-      max_results: 100,
-    })
-    file = File.open(path, 'w')
-    begin
-      for i in resp.secret_list
-        for prefix in prefixes
-          if i.name.include? prefix 
-            file.puts(i.name)
-          end
-        end
-      end
-      if not resp.key?('next_token')
-        break
-      end
-      resp = client.list_secrets({
-        max_results: 100,
-        next_token: resp.next_token
-      })
-    end while true
-    file.close()
-    return true
-  end
-
-
-
-  ##
-  # Process the response secret string by attempting to coerce it
+  # Return JSON in case Secret is a Hash
   def process_secret_string(secret_string, _options, context)
     # Attempt to process this string as a JSON object
     begin
