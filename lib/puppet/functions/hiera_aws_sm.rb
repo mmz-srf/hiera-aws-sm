@@ -29,7 +29,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     when 'info'
       log.level = Logger::INFO
     when 'warn'
-      log.level = Logger::WARN    
+      log.level = Logger::WARN
     when 'debug'
       log.level = Logger::DEBUG
     else
@@ -104,7 +104,7 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     when 'info'
       log.level = Logger::INFO
     when 'warn'
-      log.level = Logger::WARN    
+      log.level = Logger::WARN
     when 'debug'
       log.level = Logger::DEBUG
     else
@@ -120,8 +120,13 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     secret_formatted = secret_f.sub('secretmanager.', '') #remove secrets prefix for cleaner secret names
     log.info("[hiera-aws-sm] secret #{key}  found in cache ")
 
-    output = `export AWS_CONFIG_FILE=#{credentials_file} && aws secretsmanager get-secret-value --secret-id #{secret_formatted} 2>&1`
-    response = JSON.parse(output)
+    response = { 'SecretString' => "Secret key not found in AWS Secrets Manager #{secret_formatted}" }
+    begin
+      output = `export AWS_CONFIG_FILE=#{credentials_file} && aws secretsmanager get-secret-value --secret-id #{secret_formatted} 2>&1`
+      response = JSON.parse(output)
+    rescue
+      log.info("[hiera-aws-sm] secret key not found in AWS Secrets Manager #{secret_formatted}")
+    end
     log.info("[hiera-aws-sm] secret #{key} provided by #{secret_formatted}")
 
     unless response.nil?
